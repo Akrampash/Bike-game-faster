@@ -1,0 +1,185 @@
+Code yeh raha. Ise copy karke GitHub wale box mein paste kar dijiye.
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { margin: 0; background: #222; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; color: #fff; }
+canvas { display: block; background: #333; touch-action: none; }
+#controls { margin-top: 10px; display: flex; gap: 20px; }
+button { padding: 12px 24px; font-size: 18px; background: #444; color: #fff; border: 1px solid #777; border-radius: 6px; }
+#startBtn { position: absolute; padding: 15px 30px; font-size: 20px; background: #28a745; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
+</style>
+</head>
+<body>
+<button id="startBtn">Start Game (Enable Audio)</button>
+<canvas id="game" width="400" height="600"></canvas>
+<div id="controls">
+<button id="leftBtn">&larr; Left</button>
+<button id="rightBtn">Right &rarr;</button>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const startBtn = document.getElementById('startBtn');
+const leftBtn = document.getElementById('leftBtn');
+const rightBtn = document.getElementById('rightBtn');
+
+let playerX = 180;
+let score = 0;
+let obsY = -100;
+let obsX = Math.floor(Math.random() * 260) + 50;
+let speed = 250;
+let lastTime = 0;
+let mode = 'init';
+
+let audioCtx = null;
+let engineOsc = null;
+let engineGain = null;
+
+function initAudio() {
+  if (audioCtx) return;
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  audioCtx = new AudioContext();
+
+  engineOsc = audioCtx.createOscillator();
+  engineGain = audioCtx.createGain();
+
+  engineOsc.type = 'sawtooth';
+  engineOsc.frequency.setValueAtTime(65, audioCtx.currentTime);
+
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(300, audioCtx.currentTime);
+
+  engineGain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+
+  engineOsc.connect(filter);
+  filter.connect(engineGain);
+  engineGain.connect(audioCtx.destination);
+  engineOsc.start();
+}
+
+function updateEngineSound() {
+  if (!audioCtx || !engineOsc) return;
+  const baseFreq = 65;
+  const pitchVariation = (speed - 250) * 0.15;
+  engineOsc.frequency.setValueAtTime(baseFreq + pitchVariation, audioCtx.currentTime);
+}
+
+function playCrashSound() {
+  if (!audioCtx) return;
+  if (engineGain) engineGain.gain.setValueAtTime(0, audioCtx.currentTime);
+
+  const bufferSize = audioCtx.sampleRate * 0.5;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = buffer;
+
+  const noiseGain = audioCtx.createGain();
+  noiseGain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+
+  noise.connect(noiseGain);
+  noiseGain.connect(audioCtx.destination);
+  noise.start();
+}
+
+function moveLeft() {
+  if (mode === 'play' && playerX > 60) playerX -= 25;
+}
+
+function moveRight() {
+  if (mode === 'play' && playerX < 300) playerX += 25;
+}
+
+startBtn.addEventListener('click', () => {
+  initAudio();
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  startBtn.style.display = 'none';
+  mode = 'play';
+  lastTime = performance.now();
+  requestAnimationFrame(update);
+});
+
+leftBtn.addEventListener('click', moveLeft);
+rightBtn.addEventListener('click', moveRight);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') moveLeft();
+  if (e.key === 'ArrowRight') moveRight();
+});
+
+function update(time) {
+  if (mode !== 'play') return;
+  let dt = (time - lastTime) / 1000;
+  lastTime = time;
+
+  obsY += speed * dt;
+  score += speed * dt * 0.05;
+  speed += 2 * dt;
+
+  updateEngineSound();
+
+  if (obsY > 600) {
+    obsY = -70;
+    obsX = Math.floor(Math.random() * 240) + 60;
+  }
+
+  if (obsY > 480 && obsY < 570 && Math.abs(playerX - obsX) < 35) {
+    mode = 'over';
+    playCrashSound();
+  }
+
+  ctx.clearRect(0, 0, 400, 600);
+
+  // Road
+  ctx.fillStyle = '#444';
+  ctx.fillRect(50, 0, 300, 600);
+  ctx.strokeStyle = '#fff';
+  ctx.setLineDash([20, 20]);
+  ctx.beginPath();
+  ctx.moveTo(200, 0);
+  ctx.lineTo(200, 600);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Player Bike
+  ctx.fillStyle = '#00e5ff';
+  ctx.fillRect(playerX, 520, 30, 60);
+
+  // Obstacle
+  ctx.fillStyle = '#ff1744';
+  ctx.fillRect(obsX, obsY, 35, 60);
+
+  // UI
+  ctx.fillStyle = '#fff';
+  ctx.font = '18px Arial';
+  ctx.fillText('Score: ' + Math.floor(score), 60, 30);
+
+  if (mode === 'over') {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(50, 200, 300, 150);
+    ctx.fillStyle = '#ff1744';
+    ctx.font = 'bold 30px Arial';
+    ctx.fillText('GAME OVER', 115, 260);
+    ctx.fillStyle = '#fff';
+    ctx.font = '18px Arial';
+    ctx.fillText('Final Score: ' + Math.floor(score), 135, 300);
+    return;
+  }
+
+  requestAnimationFrame(update);
+}
+</script>
+</body>
+</html>
+
